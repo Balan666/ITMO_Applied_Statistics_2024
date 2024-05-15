@@ -1,0 +1,118 @@
+---
+title: "ITMO_Appl_stat_HW2_Balan.rmd"
+author: "Balan Anna"
+date: '15.05'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(golubEsets)
+library(ggplot2)
+library(gridExtra)
+library(ape)
+library(pvclust)
+library(hddplot)
+#library(dendextend)
+library(dplyr)
+library(tidyr)
+```
+
+## Loading data
+
+```{r}
+require(golubEsets)
+data(Golub_Merge)
+#Data to work with
+golub <- data.frame(Golub_Merge)[1:7129]
+
+#group vector to check
+Golub_Merge$ALL.AML
+
+# Normalization
+golub <- log10((golub - min(golub)) + 1)
+```
+
+
+
+
+```{r}
+# Update the row names
+sample_names <- paste0(Golub_Merge$Samples, "_", Golub_Merge$ALL.AML)
+names(sample_names) <- Golub_Merge$Samples
+rownames(golub) <- sample_names[match(rownames(golub), names(sample_names))]
+
+
+for (distance in c("euclidean", "canberra", "manhattan")) {
+  
+  dist_matrix <- dist(golub, method = distance)
+  # Convert distance matrix to a vector
+  dist_vec <- as.vector(dist_matrix)
+  
+  # Create density plots
+  print(ggplot(data.frame(dist_vec), aes(x = dist_vec)) +
+    geom_density(fill = "orange", alpha = 0.3) +  
+    labs(x = "Values", y = "Density", subtitle = distance)
+  )
+}
+
+```
+
+```{r}
+perform_clustering <- function(data) {
+  dist_types <- c("euclidean", "manhattan", "bray", "canberra")
+  clustering_methods <- c("average", "complete", "ward.D2", "single")
+  results <- list()
+  for (dist_method in dist_types) {
+    distance <- vegdist(data, method = dist_method)
+    for (clust_method in clustering_methods) {
+      method_hc <- hclust(distance, method = clust_method)
+      method_ph <- as.phylo(method_hc)
+      cop_method <- cophenetic(method_ph)
+      correlation <- cor(distance, as.dist(cop_method))
+      results[[paste(dist_method, clust_method, sep = "_")]] <- c(
+        "distance" = distance,
+        "method_hc" = method_hc,
+        "method_ph" = method_ph,
+        "correlation" = correlation
+      )
+    }
+  }
+  return(results)
+}
+
+corr_calc<-perform_clustering(golub)
+
+correlation_df <- data.frame(Distance_method = character(),
+                         Clustering_method = character(),
+                         Correlation_coefficient = numeric())
+
+for (method in names(corr_calc)) {
+  methods <- strsplit(method, "_")[[1]]
+  corr <- corr_calc[[method]]$corr
+  correlation_df <- rbind(correlation_df, data.frame(Distance_method = methods[1],
+                                             Clustering_method = methods[2],
+                                             Correlation_coefficient = corr))
+}
+
+correlation_df
+```
+
+```{r}
+dist_types <- c("euclidean", "manhattan", "canberra")
+clustering_methods <- c("average", "complete", "single")
+  
+  for (dist_method in dist_types) {
+    for (clust_method in clustering_methods) {
+      distance <- vegdist(golub, method = dist_method)
+      method_hc <- hclust(distance, method = clust_method)
+      method_ph <- as.phylo(method_hc)
+      status <- factor(Golub_Merge$ALL.AML, levels = c('AML', 'ALL'))
+      colors <- ifelse(status == 'AML', 'red', 'blue')
+      plot(method_ph, main = paste(dist_method,  clust_method), cex=0.5, tip.color = colors)
+    }
+  }
+```
+
