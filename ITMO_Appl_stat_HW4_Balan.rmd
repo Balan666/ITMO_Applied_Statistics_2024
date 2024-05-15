@@ -1,0 +1,120 @@
+---
+title: "HW4"
+author: "Balan Anna"
+date: '12 ?????? 2024 ?? '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(corrplot)
+library(readxl)
+library(vegan)
+library(ggvegan)
+```
+
+## The task
+You have been provided with data to assess the effects of grazing on the zoobenthos of rivers on the island of Tasmania. You need to identify which external factors have the greatest influence on changes in the composition of flora and fauna
+
+## The solution
+
+
+
+```{r}
+fauna <- read_excel('C:/Users/bananna/Downloads/Grazing_Magierowski_et_al_2015.xls', sheet = 'fauna')
+env <- read_excel('C:/Users/bananna/Downloads/Grazing_Magierowski_et_al_2015.xls', sheet = 'env')
+coord <- read_excel('C:/Users/bananna/Downloads/Grazing_Magierowski_et_al_2015.xls', sheet = 'coord')
+raw <- read_excel('C:/Users/bananna/Downloads/Grazing_Magierowski_et_al_2015.xls', sheet = 'raw', skip=1)
+```
+
+
+```{r}
+#Change column names to suitable ones
+colnames(env) <- c("SITE","Abstraction","Regulation","Grazing","Fines","Temperature","Conductivity","AvgTurbidity","pH",
+                   "Alkalinity","NitrateNitrite","DRP","N_total","P_total","AvgShading","AvgAlgae","Chl","GrazingRank")
+
+data_graze <- merge(env,fauna)
+data_graze <- na.omit(data_graze)
+
+#Correlation between numerical values
+corrplot(cor(data_graze[,2:17]))
+```
+
+AvgAlgae strongly correlates with Abstraction,
+Regulation strongly correlates withAbstraction, 
+Conductivity correlates with alkalinity
+so we can get rid of AvgAlgae and Regulation while building a model later.
+
+```{r}
+#After omitting na's we can slplit the data again
+env <- data_graze[,1:18]
+fauna <- data_graze[, 19:length(data_graze)]
+```
+
+Let's look at environmental distributions before and after log normalization
+
+```{r}
+#
+boxplot(env[,2:17], las=2)
+env_lognorm <- scale(log(env[,2:17]+1), scale = FALSE)
+boxplot(env_lognorm, las=2)
+data_graze[,2:17] <- env_lognorm #save normalized data
+```
+
+Most of the data doesn't look normally distributed. Also there are some outliers which are better to get rid of
+
+```{r}
+graze_cca <- cca(data_graze[,19:length(data_graze)] ~ Abstraction + Grazing + Fines + Temperature + Conductivity + 
+                   AvgTurbidity + pH + N_total + P_total + AvgShading + Chl, data = data_graze)
+
+vif.cca(graze_cca)
+summary(graze_cca)
+
+```
+
+```{r}
+screeplot(graze_cca,  bstick = TRUE)
+autoplot(graze_cca, scaling = "sites")
+```
+
+```{r}
+plot(graze_cca, scaling = "sites", 
+     main = "scaling 1, 'sites' ")
+```
+
+```{r}
+plot(graze_cca, scaling = 2, 
+     display = c("species", "cn"), 
+     main = "biplot cca, scaling 2")
+```
+
+
+
+```{r}
+anova(graze_cca)
+
+anova(graze_cca, by="term")
+```
+
+Our model is significant (P=0.001), so we can use it. The most important features are Abstraction, AvgTurbidity, Temperature aand Conductivity
+
+We can see on the plots that some species are associated with higher Grazing and Abstraction, so these factors might be important when both of them are present. Other factors' significanse is not so obvious right now. Let's build a model (without strongly correlating features) and look closer. We can also check some pairs of features (N_total*P_total), since it might be important for some speacies:
+
+```{r}
+graze_cca_2 <- cca(fauna ~ Grazing*Abstraction + Fines + Temperature + Conductivity + 
+                   AvgTurbidity + pH + N_total*P_total + AvgShading + Chl + GrazingRank, data = env)
+
+anova(graze_cca)
+anova(graze_cca_2, by="term")
+```
+
+Our new model is valid as well, but Grazing, AvgTurbidity, Abstraction, Temperature, Conductivity and P_total play the most significant roles right now. The other ones are not nessessary. So we can get rid of them and come up with the last variant of model:
+
+```{r}
+graze_cca_3 <- cca(fauna ~ Grazing*Abstraction + Temperature + Conductivity + 
+                   AvgTurbidity + P_total, data = env)
+
+anova(graze_cca)
+anova(graze_cca_3, by="term")
+```
+
