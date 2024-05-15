@@ -18,6 +18,7 @@ library(hddplot)
 #library(dendextend)
 library(dplyr)
 library(tidyr)
+library(vegan)
 ```
 
 ## Loading data
