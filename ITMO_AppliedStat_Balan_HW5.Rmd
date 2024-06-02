@@ -1,0 +1,110 @@
+---
+title: "Applied_stat_ITMO_HW6"
+author: "Balan_Anna"
+date: "2024-06-02"
+output: html_document
+---
+
+```{r, message=FALSE}
+library('ade4')
+library('vegan')
+library('ggplot2')
+library('tidyr')
+library('psych')
+```
+
+## Loading data
+```{r}
+data(doubs)
+spe <- doubs$fish
+spa <- doubs$xy
+env <- doubs$env
+```
+
+## EDA
+```{r}
+describe(env)
+colSums(spe)
+```
+
+```{r}
+# Remove the empty sample number 8
+spe <- spe[,-8]
+spa <- spa[-8,]
+```
+
+```{r}
+boxplot(env, las=2)
+```
+
+```{r}
+env <- scale(log(env+1), scale = FALSE)
+boxplot(env, las=2)
+```
+```{r}
+cor.plot(cor(env))
+```
+
+Many variables significantly correlate, so we'll need to get rid of 'em
+```{r}
+heatmap(abs(cor(spe)), 
+        # Compute pearson correlation (note they are absolute values)
+        col = rev(heat.colors(6)), 
+        main = 'Species number correlation',
+        Colv = NA, Rowv = NA)
+legend("topright", 
+       title = "Absolute Pearson R",
+       legend =  round(seq(0,1, length.out = 6),1),
+       y.intersp = 0.7, bty = "n",
+       fill = rev(heat.colors(6)))
+```
+
+We can see that there are at least two big clusters of fish species, it can be seen as two orange squires in the heatmap.
+
+## Hierarchical cluster analysis
+#### Species
+```{r}
+# Hierarchical cluster analysis
+dist_mat <- dist(spe, method = "euclidean")
+hc_res <- hclust(dist_mat, method = "ward.D2")
+```
+
+```{r}
+# Draw the dendrogram with 4 groups
+plot(hc_res, cex = 0.6)
+rect.hclust(hc_res, k = 4, border = "red")
+```
+
+```{r}
+hc_clusters <- cutree(hc_res, k = 4)
+```
+
+
+#### Locations
+```{r}
+# Draw the spatial distribution of the samples based on hierarchical clustering
+plot(spa[,1], spa[,2], type = "b", pch = hc_clusters, col = hc_clusters, main = "Hierarchical Clustering")
+
+```
+We can see that some locations are really close to each other, so we might get rid of them later
+
+```{r}
+model <- capscale(spe ~ dfs + alt + flo + bdo,
+                              distance = "bray", data = data.frame(env), add = TRUE)
+
+eigenvals(model)/sum(eigenvals(model))
+
+# ordiggplot(model, scaling = 1)
+#ordiggplot(model, scaling = 2) + aes(colour = env$amm)
+
+anova(model, by = "mar")
+```
+
+So, species depend on these factors:
+
+dfs	Distance from the source [km]
+alt	Altitude [m a.s.l.]
+flo	Mean minimum discharge [m3s-1]
+bdo	Biological oxygen demand [mgL-1]
+
+Surprisingly, it didn't depend on pH level, amm, nitrate or phosphate levels.
