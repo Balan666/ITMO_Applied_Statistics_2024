@@ -1,0 +1,175 @@
+---
+title: "ITMO_appl_stat_HW3_Balan"
+output: html_document
+date: "2024-15-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(ggplot2)
+library(ggforce)
+library(plotly)
+library(impute)
+library(factoextra)
+library(psych)
+library(vegan)
+library(rstatix)
+
+theme_set(theme_bw())
+```
+
+
+```{r}
+data <- read_excel('Sleepy lizard.xlsx')
+data <- select(data, Treatment, Habitat, Connectivity, Tot_WBC, Het_ABS, 
+               Lym_ABS, `H:L Ratio`, Mon_ABS, OthG_ABS, LBSI) #The list of features from HW task
+```
+
+## Changing some features to factors
+
+```{r}
+data$Treatment <-  as.factor(data$Treatment)
+data$Habitat <- as.factor(data$Habitat)
+data$Connectivity <-  as.factor(data$Connectivity)
+```
+
+# EDA
+
+```{r}
+describe(data)
+```
+
+```{r}
+data_blood <- select(data, -Treatment, -Habitat, -Connectivity)
+```
+
+```{r}
+boxplot(data_blood, las=2) #needs to be normalized
+```
+
+## Normalization
+
+```{r}
+data_blood_lognorm <- scale(log(data_blood+1), scale = FALSE)
+boxplot(data_blood_lognorm, las=2)
+```
+
+# PCA
+
+```{r}
+pca_data <- prcomp(data_blood_lognorm)$x %>% 
+  as.data.frame() %>%
+  select(PC1, PC2)
+
+pca_data$Treatment = data$Treatment
+pca_data$Habitat = data$Habitat
+```
+
+```{r}
+ggplot(pca_data, aes(x=PC1, y=PC2, shape=Treatment, col=Habitat))+
+  geom_point(size=2)+
+  geom_mark_ellipse(aes(col = Treatment))
+```
+
+We can see that clusters are disttinguishable from each other, maybe this difference is significant
+
+# perMANOVA
+
+## Choosing suitable dissimilarity index
+
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "euclidean")
+hc_single <- hclust(blood_df_dist, method = 'single')
+plot(hc_single)
+```
+
+The Canberra distance has been used as a metric for comparing ranked lists[3] and for intrusion detection in computer security.[4] It has also been used to analyze the gut microbiome in different disease states. (wiki)
+
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "canberra")
+hc_single <- hclust(blood_df_dist, method = 'single')
+plot(hc_single)
+```
+ 
+ the Bray-Curtis dissimilarity is a statistic used to quantify the dissimilarity in species composition between two different sites, based on counts at each site.(wiki)
+ 
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "bray")
+hc_single <- hclust(blood_df_dist, method = 'single')
+plot(hc_single)
+```
+
+
+Seems like euclidean and canberra distances are pretty fine to use
+
+## Check applicability of analysis
+
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "canberra")
+bl_df_PC0 <- betadisper(blood_df_dist, data$Habitat)
+plot(bl_df_PC0)
+anova(bl_df_PC0)
+```
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "canberra")
+bl_df_PC0 <- betadisper(blood_df_dist, data$Treatment)
+plot(bl_df_PC0)
+anova(bl_df_PC0)
+```
+
+```{r}
+blood_df_dist <- vegdist(data_blood_lognorm, method  = "canberra")
+bl_df_PC0 <- betadisper(blood_df_dist, data$Connectivity)
+plot(bl_df_PC0)
+anova(bl_df_PC0)
+```
+
+Dispersion is equal in Habitat, Connectivity and Treatment groups, so we can apply the method
+
+## Task 1
+
+#### a: Blood composition ~ Treatment
+
+```{r}
+adonis2(data_blood_lognorm ~ data$Treatment, method = "canberra")
+```
+
+#### b: Blood composition ~ Habitat
+
+```{r}
+data_sub <- data_blood_lognorm %>% as.data.frame() %>% filter(data$Treatment == 2)
+habitat_sub <- subset(data, Treatment == 2)$Habitat
+#OR
+habitat_sub <- data[data$Treatment == 2,]$Habitat
+```
+
+```{r}
+adonis2(data_sub ~ habitat_sub, method = "canberra")
+```
+
+#### c: Blood composition ~ Connectivity
+
+```{r}
+connect_sub <- subset(data, Treatment == 2)$Connectivity
+```
+
+```{r}
+adonis2(data_sub ~ connect_sub, method = "canberra")
+```
+
+## Task 2
+
+
+```{r}
+adonis2(data_sub ~ connect_sub + habitat_sub, method = "canberra")
+```
+
+## Conclusion
+
+habitat modification has a significant impact on the blood composition of lizards. Lizards from modified landscapes have different blood composition compared to lizards from unmodified habitats, regardless of connectivity.
+
+The PCA analysis revealed that lizards from different treatment groups are distinct from each other. However, the relatively low intra-group variability within the modified landscape group suggests that lizards from different habitat types within this group are more similar to each other than they are to lizards from unmodified habitats.
